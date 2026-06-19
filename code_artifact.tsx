@@ -1,0 +1,1860 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, collection, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
+
+/**
+ * UTILITY: 取得格式化後的日期字串 YYYY-MM-DD
+ */
+const getFormattedDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+// ==========================================
+// 🔑 【FIREBASE 雲端金鑰專區 - 已為您對齊成功】
+// ==========================================
+const firebaseConfig = typeof __firebase_config !== 'undefined'
+  ? JSON.parse(__firebase_config)
+  : {
+      apiKey: "AIzaSyAH-MFSBW7XIYamOfh9CA-Iy9ekaZUD8q0",
+      authDomain: "timetable-35d3f.firebaseapp.com",
+      projectId: "timetable-35d3f",
+      storageBucket: "timetable-35d3f.firebasestorage.app",
+      messagingSenderId: "1059535652125",
+      appId: "1:1059535652125:web:835e05e4108626d90acdf4"
+    };
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'sky-trading-camp-v3';
+
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.warn("Firebase 初始化降級:", e);
+}
+
+// 課表主題配色
+const COURSE_THEMES = {
+  emerald: { 
+    name: '◆ 新手教學', 
+    bg: 'bg-[#F3FAF5]', 
+    border: 'border-[#C2EAD0]', 
+    text: 'text-[#1B5E20]', 
+    accent: 'bg-[#2E7D32]', 
+    pill: 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]' 
+  },
+  indigo: { 
+    name: '◆ 實戰課程', 
+    bg: 'bg-[#F1F5FA]', 
+    border: 'border-[#C9DAF0]', 
+    text: 'text-[#1A237E]', 
+    accent: 'bg-[#283593]', 
+    pill: 'bg-[#E8EAF6] text-[#283593] border-[#C5CAE9]' 
+  },
+  gold: { 
+    name: '◆ 初階課程', 
+    bg: 'bg-[#FDFBF6]', 
+    border: 'border-[#F2E5D0]', 
+    text: 'text-[#795548]', 
+    accent: 'bg-[#8D6E63]', 
+    pill: 'bg-[#FFF8E1] text-[#FF8F00] border-[#FFE082]' 
+  },
+  rose: { 
+    name: '◆ 實戰課程', 
+    bg: 'bg-[#FAF3FA]', 
+    border: 'border-[#ECD0EC]', 
+    text: 'text-[#4A148C]', 
+    accent: 'bg-[#6A1B9A]', 
+    pill: 'bg-[#F3E5F5] text-[#6A1B9A] border-[#E1BEE7]' 
+  }
+};
+
+const getNoteBadgeStyle = (note) => {
+  if (note === '預約制' || note === '社群限定') {
+    return 'bg-[#FFF8E1] text-[#FF8F00] border-[#FFE082]';
+  }
+  return 'bg-stone-100 text-stone-600 border-stone-200';
+};
+
+const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+
+// 預設 2026 年 6 月精美靜態排程 (若雲端無資料時的預設顯示)
+const DEFAULT_SCHEDULES = [];
+const populateJune2026 = () => {
+  const year = 2026;
+  const month = '06';
+
+  // 週一 新手教學 14:00 (Darren 助教) - 預約制
+  ['01', '08', '15', '22', '29'].forEach(day => {
+    DEFAULT_SCHEDULES.push({
+      id: `def-mon-${day}`,
+      title: "新手教學",
+      date: `${year}-${month}-${day}`,
+      startTime: "14:00",
+      endTime: "15:30",
+      instructor: "Darren 助教",
+      room: "線上直播",
+      note: "預約制",
+      theme: "emerald"
+    });
+  });
+
+  // 週二 破框指標｜實戰課 21:00 (Gino 助教) - 社群限定
+  ['02', '09', '16', '23', '30'].forEach(day => {
+    DEFAULT_SCHEDULES.push({
+      id: `def-tue-${day}`,
+      title: "破框指標｜實戰課",
+      date: `${year}-${month}-${day}`,
+      startTime: "21:00",
+      endTime: "22:30",
+      instructor: "Gino 助教",
+      room: "線上直播",
+      note: "社群限定",
+      theme: "indigo"
+    });
+  });
+
+  // 週三 首K+破框指標｜初階課 21:00 (Luke 助教) - 全公開
+  ['03', '10', '17', '24'].forEach(day => {
+    DEFAULT_SCHEDULES.push({
+      id: `def-wed-${day}`,
+      title: "首K+破框指標｜初階課",
+      date: `${year}-${month}-${day}`,
+      startTime: "21:00",
+      endTime: "22:30",
+      instructor: "Luke 助教",
+      room: "Youtube",
+      note: "全公開",
+      theme: "gold"
+    });
+  });
+
+  // 週四 新手教學 20:30 & 破框實戰課 21:00
+  ['04', '11', '18', '25'].forEach(day => {
+    DEFAULT_SCHEDULES.push({
+      id: `def-thu-1-${day}`,
+      title: "新手教學",
+      date: `${year}-${month}-${day}`,
+      startTime: "20:30",
+      endTime: "21:30",
+      instructor: "Luke 助教",
+      room: "線上直播",
+      note: "預約制",
+      theme: "emerald"
+    });
+    DEFAULT_SCHEDULES.push({
+      id: `def-thu-2-${day}`,
+      title: "破框指標｜實戰課",
+      date: `${year}-${month}-${day}`,
+      startTime: "21:00",
+      endTime: "22:30",
+      instructor: "Gino 助教",
+      room: "線上直播",
+      note: "社群限定",
+      theme: "indigo"
+    });
+  });
+
+  // 週五 首K+破框指標｜實戰課 21:00 - 社群限定
+  ['05', '12', '19', '26'].forEach(day => {
+    DEFAULT_SCHEDULES.push({
+      id: `def-fri-${day}`,
+      title: "首K+破框指標｜實戰課",
+      date: `${year}-${month}-${day}`,
+      startTime: "21:00",
+      endTime: "22:30",
+      instructor: "Luke 助教",
+      room: "線上直播",
+      note: "社群限定",
+      theme: "rose"
+    });
+  });
+};
+populateJune2026();
+
+const DEFAULT_WEEK_TEMPLATE = [
+  { id: 't1', dayOfWeek: 1, title: '新手教學', startTime: '14:00', endTime: '15:30', instructor: 'Darren 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+  { id: 't2', dayOfWeek: 2, title: '破框指標｜實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
+  { id: 't3', dayOfWeek: 3, title: '首K+破框指標｜初階課', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: 'Youtube', note: '全公開', theme: 'gold' },
+  { id: 't4', dayOfWeek: 4, title: '新手教學', startTime: '20:30', endTime: '21:30', instructor: 'Luke 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+  { id: 't5', dayOfWeek: 4, title: '破框指標｜實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
+  { id: 't6', dayOfWeek: 5, title: '首K+破框指標｜實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: '線上直播', note: '社群限定', theme: 'rose' }
+];
+
+const TAS_LINE = [
+  { 
+    id: 'gino', 
+    name: 'Gino 助教', 
+    title: '破框實戰首席 / 趨勢波段引導', 
+    lineId: '@gino_trading', 
+    link: 'https://line.me/R/ti/p/@gino_trading',
+    avatar: 'G',
+    badgeText: '破框實戰',
+    badgeBg: 'bg-[#E8EAF6] text-[#283593] border-[#C5CAE9]',
+    avatarBg: 'border-[#C5A880] bg-[#FAF6EE] text-[#8A6F48]',
+    socials: [
+      {
+        platform: 'Instagram',
+        url: 'https://www.instagram.com/yusheng.zhu.14/'
+      },
+      {
+        platform: 'Threads',
+        url: 'https://www.threads.com/@yusheng.zhu.14?xmt=AQG0I99fmOEt7mSHczlLd2EAygWh5he8KV3xXIY4JXY09gY'
+      },
+      {
+        platform: 'YouTube 頻道',
+        url: 'https://www.youtube.com/@Gino-3128'
+      }
+    ]
+  },
+  { 
+    id: 'darren', 
+    name: 'Darren 助教', 
+    title: '新手啟航專門 / 行情觀念扎根', 
+    lineId: '@darren_trading', 
+    link: 'https://line.me/R/ti/p/@darren_trading',
+    avatar: 'D',
+    badgeText: '新手導引',
+    badgeBg: 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]',
+    avatarBg: 'border-[#2E7D32] bg-[#E8F5E9] text-[#2E7D32]',
+    socials: [
+      {
+        platform: 'Instagram',
+        url: 'https://www.instagram.com/boshengzhu/'
+      },
+      {
+        platform: 'Threads',
+        url: 'https://www.threads.com/@da_rren_1225'
+      }
+    ]
+  },
+  { 
+    id: 'luke', 
+    name: 'Luke 助教', 
+    title: '短線交易傳承 / 進階盤感淬煉', 
+    lineId: '@shihhuai_trading', 
+    link: 'https://line.me/R/ti/p/@shihhuai_trading',
+    avatar: 'L',
+    badgeText: '短線交易',
+    badgeBg: 'bg-[#FFF8E1] text-[#FF8F00] border-[#FFE082]',
+    avatarBg: 'border-[#8D6E63] bg-[#FFF8E1] text-[#795548]',
+    socials: [
+      {
+        platform: 'Instagram',
+        url: 'https://www.instagram.com/r_a_0_5_3/'
+      },
+      {
+        platform: 'Threads',
+        url: 'https://www.threads.com/@r_a_0_5_3?xmt=AQG0I99fmOEt7mSHczlLd2EAygWh5he8KV3xXIY4JXY09gY'
+      },
+      {
+        platform: 'YouTube 頻道',
+        url: 'https://www.youtube.com/@zero2one_skyfx/streams'
+      }
+    ]
+  }
+];
+
+export default function App() {
+  const [user, setUser] = useState(null); // Firebase Auth State
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminPasscode, setAdminPasscode] = useState(() => localStorage.getItem('sky_admin_passcode') || "admin888");
+  const [siteTitle, setSiteTitle] = useState(() => localStorage.getItem('sky_site_title') || "交易啟航營");
+  const [subTitle, setSubTitle] = useState(() => localStorage.getItem('sky_sub_title') || "Elite Trading Camp");
+  
+  // 助教客製化頭像
+  const [ginoAvatar, setGinoAvatar] = useState(() => localStorage.getItem('sky_gino_avatar') || "");
+  const [darrenAvatar, setDarrenAvatar] = useState(() => localStorage.getItem('sky_darren_avatar') || "");
+  const [lukeAvatar, setLukeAvatar] = useState(() => localStorage.getItem('sky_luke_avatar') || "");
+  
+  // 當前系統日期
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDateStr, setSelectedDateStr] = useState(getFormattedDate(new Date()));
+  
+  // 資料儲存 (優先從雲端載入，localStorage 作為離線備份)
+  const [schedules, setSchedules] = useState(() => {
+    const saved = localStorage.getItem('sky_schedules_v3');
+    return saved ? JSON.parse(saved) : DEFAULT_SCHEDULES;
+  });
+  
+  const [weeklyTemplate, setWeeklyTemplate] = useState(() => {
+    const saved = localStorage.getItem('sky_weekly_template_v3');
+    return saved ? JSON.parse(saved) : DEFAULT_WEEK_TEMPLATE;
+  });
+
+  // 彈出狀態控制
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [showAddEditModal, setShowAddEditModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedTaQr, setSelectedTaQr] = useState(null);
+  const [selectedDayCourses, setSelectedDayCourses] = useState(null);
+  const [selectedCourseDetail, setSelectedCourseDetail] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  
+  // 課表編輯表單
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formStartTime, setFormStartTime] = useState("21:00");
+  const [formEndTime, setFormEndTime] = useState("22:30");
+  const [formInstructor, setFormInstructor] = useState("");
+  const [formRoom, setFormRoom] = useState("線上直播");
+  const [formNote, setFormNote] = useState("預約制");
+  const [formTheme, setFormTheme] = useState("gold");
+
+  // 範本編輯
+  const [templateDay, setTemplateDay] = useState(1);
+  const [editingTemplateItem, setEditingTemplateItem] = useState(null);
+
+  // 1. 同步儲存至 LocalStorage
+  useEffect(() => {
+    localStorage.setItem('sky_schedules_v3', JSON.stringify(schedules));
+  }, [schedules]);
+
+  useEffect(() => {
+    localStorage.setItem('sky_weekly_template_v3', JSON.stringify(weeklyTemplate));
+  }, [weeklyTemplate]);
+
+  // 2. 啟動時一律執行 Firebase 驗證安全登入
+  useEffect(() => {
+    const initAuth = async () => {
+      if (!auth) return;
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Firebase Auth 初始化失敗:", e);
+      }
+    };
+    initAuth();
+    
+    if (auth) {
+      const unsubscribe = onAuthStateChanged(auth, setUser);
+      return () => unsubscribe();
+    }
+  }, []);
+
+  // 3. 實時連線雲端資料庫同步（當 user 登入狀態就緒時）
+  useEffect(() => {
+    if (!db || !user) return;
+
+    // 課表實時同步
+    const schedulesRef = collection(db, 'artifacts', appId, 'public', 'data', 'schedules');
+    const unsubSchedules = onSnapshot(schedulesRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const data = [];
+        snapshot.forEach(docSnap => {
+          data.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        setSchedules(data);
+      }
+    }, (err) => {
+      console.error("雲端課表加載失敗:", err);
+    });
+
+    // 品牌資訊實時同步
+    const brandingRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'branding');
+    const unsubBranding = onSnapshot(brandingRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.title) setSiteTitle(data.title);
+        if (data.subtitle) setSubTitle(data.subtitle);
+      }
+    }, (err) => {
+      console.error("雲端品牌載入失敗:", err);
+    });
+
+    // 助教頭像數據實時同步
+    const avatarsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'avatars');
+    const unsubAvatars = onSnapshot(avatarsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.gino !== undefined) setGinoAvatar(data.gino);
+        if (data.darren !== undefined) setDarrenAvatar(data.darren);
+        if (data.luke !== undefined) setLukeAvatar(data.luke);
+      }
+    }, (err) => {
+      console.error("雲端頭像載入失敗:", err);
+    });
+
+    return () => {
+      unsubSchedules();
+      unsubBranding();
+      unsubAvatars();
+    };
+  }, [user]);
+
+  const triggerToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, show: false }));
+    }, 2500);
+  };
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (loginPassword === adminPasscode) {
+      setIsAdmin(true);
+      setShowLoginModal(false);
+      setLoginPassword("");
+      triggerToast("管理權限解鎖成功！");
+    } else {
+      triggerToast("密碼錯誤，請重試", "error");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAdmin(false);
+    triggerToast("已安全登出管理員身分。");
+  };
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  // 計算 5 日制月曆
+  const firstDayOfMonth = new Date(year, month, 1);
+  const dayOfWeek = firstDayOfMonth.getDay();
+  const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+  const startDate = new Date(firstDayOfMonth);
+  startDate.setDate(firstDayOfMonth.getDate() - daysToSubtract);
+
+  const calendarCells = [];
+  const tempDate = new Date(startDate);
+
+  for (let w = 0; w < 6; w++) {
+    for (let d = 0; d < 5; d++) {
+      const dateStr = getFormattedDate(tempDate);
+      calendarCells.push({
+        dateStr,
+        day: tempDate.getDate(),
+        isCurrentMonth: tempDate.getMonth() === month
+      });
+      tempDate.setDate(tempDate.getDate() + 1);
+    }
+    tempDate.setDate(tempDate.getDate() + 2);
+  }
+
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+
+  // 鍵盤切換月份
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "ArrowLeft") prevMonth();
+      else if (e.key === "ArrowRight") nextMonth();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentDate]);
+
+  // 本日排程篩選 (固定鎖定今日)
+  const todayStr = getFormattedDate(new Date());
+  const todaySchedules = schedules
+    .filter(s => s.date === todayStr)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  const openAddModal = (dateStr) => {
+    setEditingSchedule(null);
+    setSelectedDateStr(dateStr);
+    setFormTitle("");
+    setFormStartTime("21:00");
+    setFormEndTime("22:30");
+    setFormInstructor("");
+    setFormRoom("線上直播");
+    setFormNote("預約制");
+    setFormTheme("gold");
+    setShowAddEditModal(true);
+  };
+
+  const openEditModal = (schedule) => {
+    setEditingSchedule(schedule);
+    setFormTitle(schedule.title || "");
+    setFormStartTime(schedule.startTime || "21:00");
+    setFormEndTime(schedule.endTime || "22:30");
+    setFormInstructor(schedule.instructor || "");
+    setFormRoom(schedule.room || "線上直播");
+    setFormNote(schedule.note || "預約制");
+    setFormTheme(schedule.theme || "gold");
+    setShowAddEditModal(true);
+  };
+
+  // 儲存至雲端 (確保持久化)
+  const handleSaveSchedule = async (e) => {
+    e.preventDefault();
+    const payload = {
+      title: formTitle,
+      date: selectedDateStr,
+      startTime: formStartTime,
+      endTime: formEndTime,
+      instructor: formInstructor,
+      room: formRoom,
+      note: formNote,
+      theme: formTheme,
+      updatedAt: new Date().toISOString()
+    };
+
+    const targetId = editingSchedule ? editingSchedule.id : `schedule-${Date.now()}`;
+
+    try {
+      // 樂觀更新本地 State
+      if (editingSchedule) {
+        setSchedules(prev => prev.map(s => s.id === targetId ? { ...s, ...payload } : s));
+      } else {
+        setSchedules(prev => [...prev, { id: targetId, ...payload }]);
+      }
+
+      // 同步到雲端
+      if (db && user) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'schedules', targetId);
+        await setDoc(docRef, payload, { merge: true });
+        triggerToast("雲端同步成功！");
+      } else {
+        triggerToast("已存至本地暫存 (未連線雲端)");
+      }
+      
+      setShowAddEditModal(false);
+      
+      // 更新開啟中的詳細視窗
+      const updatedSchedules = schedules
+        .map(s => s.id === (editingSchedule?.id || '') ? { ...s, ...payload } : s);
+      const isNew = !editingSchedule;
+      const finalSchedules = isNew ? [...schedules, { id: `new-temp-${Date.now()}`, ...payload }] : updatedSchedules;
+      setSelectedDayCourses(finalSchedules.filter(s => s.date === selectedDateStr).sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    } catch (err) {
+      console.error(err);
+      triggerToast("雲端同步失敗", "error");
+    }
+  };
+
+  // 雲端刪除
+  const handleDeleteSchedule = async (id) => {
+    try {
+      setSchedules(prev => prev.filter(s => s.id !== id));
+      if (db && user) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'schedules', id);
+        await deleteDoc(docRef);
+        triggerToast("雲端課程已移除！");
+      } else {
+        triggerToast("本地暫存課程已移除");
+      }
+      setSelectedDayCourses(prev => prev ? prev.filter(s => s.id !== id) : null);
+    } catch (err) {
+      console.error(err);
+      triggerToast("刪除失敗", "error");
+    }
+  };
+
+  // 雲端批量套用
+  const handleApplyTemplateToMonth = async () => {
+    const targetYear = currentDate.getFullYear();
+    const targetMonth = currentDate.getMonth();
+    const totalDays = new Date(targetYear, targetMonth + 1, 0).getDate();
+
+    let addedCount = 0;
+    const newSchedules = [...schedules];
+
+    try {
+      for (let day = 1; day <= totalDays; day++) {
+        const dateObj = new Date(targetYear, targetMonth, day);
+        const jsDay = dateObj.getDay();
+        const customDayIndex = jsDay === 0 ? 7 : jsDay;
+
+        if (customDayIndex === 6 || customDayIndex === 7) continue;
+
+        const matches = weeklyTemplate.filter(t => t.dayOfWeek === customDayIndex);
+
+        for (const t of matches) {
+          const formattedDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isExist = newSchedules.some(s => s.date === formattedDate && s.startTime === t.startTime && s.title === t.title);
+          
+          if (!isExist) {
+            const templateId = `applied-${targetYear}-${targetMonth + 1}-${day}-${t.id}`;
+            const payload = {
+              title: t.title,
+              date: formattedDate,
+              startTime: t.startTime,
+              endTime: t.endTime,
+              instructor: t.instructor || "",
+              room: t.room || "線上直播",
+              note: t.note || "預約制",
+              theme: t.theme || "gold",
+              updatedAt: new Date().toISOString()
+            };
+            
+            newSchedules.push({ id: templateId, ...payload });
+            addedCount++;
+
+            if (db && user) {
+              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'schedules', templateId);
+              await setDoc(docRef, payload, { merge: true });
+            }
+          }
+        }
+      }
+      setSchedules(newSchedules);
+      setShowConfirmModal(false);
+      triggerToast(`批量套用成功！新增 ${addedCount} 堂課程並同步至雲端。`);
+    } catch (err) {
+      console.error(err);
+      triggerToast("批次套用部分失敗", "error");
+    }
+  };
+
+  // 雲端品牌設定與助教頭像保存
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    localStorage.setItem('sky_admin_passcode', adminPasscode);
+    localStorage.setItem('sky_site_title', siteTitle);
+    localStorage.setItem('sky_sub_title', subTitle);
+    
+    localStorage.setItem('sky_gino_avatar', ginoAvatar);
+    localStorage.setItem('sky_darren_avatar', darrenAvatar);
+    localStorage.setItem('sky_luke_avatar', lukeAvatar);
+    
+    if (db && user) {
+      try {
+        const securityRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'security');
+        await setDoc(securityRef, { passcode: adminPasscode }, { merge: true });
+
+        const brandingRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'branding');
+        await setDoc(brandingRef, { title: siteTitle, subtitle: subTitle }, { merge: true });
+
+        const avatarsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'avatars');
+        await setDoc(avatarsRef, { gino: ginoAvatar, darren: darrenAvatar, luke: lukeAvatar }, { merge: true });
+
+        triggerToast("品牌設定、密碼與助教頭像已成功同步至雲端！");
+      } catch (err) {
+        console.error("雲端儲存失敗: ", err);
+        triggerToast("已保存至瀏覽器本地快取。");
+      }
+    } else {
+      triggerToast("已保存設定至本地瀏覽器");
+    }
+    
+    setShowSettingsModal(false);
+  };
+
+  const handleSaveTemplateItem = (e) => {
+    e.preventDefault();
+    const payload = {
+      dayOfWeek: parseInt(templateDay),
+      title: formTitle,
+      startTime: formStartTime,
+      endTime: formEndTime,
+      instructor: formInstructor,
+      room: formRoom,
+      note: formNote,
+      theme: formTheme
+    };
+
+    if (editingTemplateItem) {
+      setWeeklyTemplate(prev => prev.map(t => t.id === editingTemplateItem.id ? { ...t, ...payload } : t));
+      triggerToast("常態配置修改成功！");
+    } else {
+      const newT = { id: `template-${Date.now()}`, ...payload };
+      setWeeklyTemplate(prev => [...prev, newT]);
+      triggerToast("已加入常態課表！");
+    }
+    setEditingTemplateItem(null);
+    setFormTitle("");
+  };
+
+  const handleDeleteTemplateItem = (id) => {
+    setWeeklyTemplate(prev => prev.filter(t => t.id !== id));
+    triggerToast("已移除該常態週預設。");
+  };
+
+  // 動態獲取對應助教頭像網址
+  const getTaAvatarUrl = (id) => {
+    if (id === 'gino') return ginoAvatar;
+    if (id === 'darren') return darrenAvatar;
+    if (id === 'luke') return lukeAvatar;
+    return "";
+  };
+
+  // 動態渲染助教社群 Icon，避免 static JSX 被提前解析時可能出現 React Child 與 symbols 不相容的錯誤
+  const renderSocialIcon = (platform) => {
+    switch (platform) {
+      case 'Instagram':
+        return (
+          <svg className="w-5 h-5 text-[#E1306C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+            <path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z" />
+            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+          </svg>
+        );
+      case 'Threads':
+        return (
+          <svg className="w-5 h-5 text-stone-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16 12a4 4 0 10-8 0M12 8v4M12 12a4 4 0 004 4c2 0 3-1 3-3V9a7 7 0 10-14 3" />
+          </svg>
+        );
+      case 'YouTube 頻道':
+        return (
+          <svg className="w-5 h-5 text-[#FF0000]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M23.498 6.163a3.003 3.003 0 00-2.11-2.107C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.388.556a3.003 3.003 0 00-2.11 2.107C0 8.083 0 12 0 12s0 3.917.502 5.837a3.003 3.003 0 002.11 2.107C4.5 20.5 12 20.5 12 20.5s7.5 0 9.388-.556a3.003 3.003 0 002.11-2.107C24 15.917 24 12 24 12s0-3.917-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-tr from-[#FDFBF9] via-[#FAF5EC] to-[#F2EFE8] text-stone-800 font-sans relative overflow-hidden pb-12 selection:bg-[#EADFC9] selection:text-stone-900">
+      
+      {/* 背景 K 線與金線裝飾 */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.25]">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <path d="M -100 120 L 300 120 L 450 250 L 1200 250 L 1400 400 L 2000 400" fill="none" stroke="#D4AF37" strokeWidth="1.5" strokeDasharray="3 3" />
+          <path d="M 0 500 L 500 500 L 700 650 L 1500 650" fill="none" stroke="#D4AF37" strokeWidth="1" />
+          <g stroke="#C5A880" strokeWidth="1.5" fill="#FAF6EE">
+            <line x1="80" y1="200" x2="80" y2="300" />
+            <rect x="74" y="220" width="12" height="50" fill="#C5A880" />
+            <line x1="140" y1="280" x2="140" y2="400" />
+            <rect x="134" y="310" width="12" height="60" fill="#EADFC9" />
+            <line x1="220" y1="150" x2="220" y2="250" />
+            <rect x="214" y="170" width="12" height="50" fill="#C5A880" />
+          </g>
+          <circle cx="1050" cy="220" r="180" fill="none" stroke="#D4AF37" strokeWidth="0.5" opacity="0.4" />
+          <circle cx="1050" cy="220" r="120" fill="none" stroke="#D4AF37" strokeWidth="0.5" strokeDasharray="5 5" opacity="0.3" />
+        </svg>
+      </div>
+
+      {/* 頂部導覽 */}
+      <header className="border-b border-[#EADFC9]/50 backdrop-blur-md bg-white/70 sticky top-0 z-40 transition-all shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          
+          <div className="flex flex-col">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-[0.25em] bg-gradient-to-r from-[#8A6F48] via-[#D4AF37] to-[#705328] bg-clip-text text-transparent flex items-center gap-2 font-sans">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#D4AF37] animate-pulse"></span>
+              {siteTitle}
+            </h1>
+            <p className="text-[10px] tracking-[0.3em] text-stone-400 font-bold uppercase mt-0.5">{subTitle}</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {isAdmin ? (
+              <div className="flex items-center gap-2">
+                <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FAF6EE] text-[#8A6F48] border border-[#E6D8C1]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                  管理模式開啟 (雲端同步)
+                </span>
+                
+                <button 
+                  onClick={() => setShowSettingsModal(true)}
+                  className="p-2 rounded-xl border border-stone-200 hover:border-[#C5A880] hover:bg-stone-50 text-stone-600 hover:text-[#8A6F48] transition-all bg-white shadow-sm"
+                  title="系統設定"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  </svg>
+                </button>
+
+                <button 
+                  onClick={() => setShowTemplateModal(true)}
+                  className="px-3 py-2 text-xs font-bold rounded-xl border border-stone-200 hover:border-[#C5A880] hover:bg-stone-50 text-stone-600 hover:text-[#8A6F48] flex items-center gap-1.5 transition-all bg-white shadow-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z" />
+                  </svg>
+                  固定週課表配置
+                </button>
+
+                <button 
+                  onClick={handleLogout}
+                  className="px-3 py-2 text-xs font-bold rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all shadow-sm"
+                >
+                  登出
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowLoginModal(true)}
+                className="px-4 py-2 text-xs tracking-wider rounded-xl border border-[#E6D8C1] hover:border-[#C5A880] text-[#8A6F48] bg-white hover:bg-[#FAF6EE] flex items-center gap-1.5 transition-all font-bold shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                管理員登入
+              </button>
+            )}
+          </div>
+
+        </div>
+      </header>
+
+      {/* 課表主內容 */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+        
+        {/* 控制切換面板 */}
+        <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/60 p-4 rounded-2xl border border-stone-200/50 backdrop-blur-sm shadow-sm">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={prevMonth}
+              className="p-2.5 rounded-xl border border-stone-200 hover:border-[#C5A880] hover:bg-white text-stone-600 hover:text-[#8A6F48] transition-all bg-white"
+              title="上個月"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            
+            <h2 className="text-sm sm:text-base font-light tracking-[0.2em] text-stone-800 text-center min-w-[150px]">
+              <span className="font-serif italic font-extrabold">{year}</span> 年 <span className="font-serif italic font-extrabold text-lg text-[#8A6F48]">{month + 1}</span> 月
+            </h2>
+
+            <button 
+              onClick={nextMonth}
+              className="p-2.5 rounded-xl border border-stone-200 hover:border-[#C5A880] hover:bg-white text-stone-600 hover:text-[#8A6F48] transition-all bg-white"
+              title="下個月"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+
+          {isAdmin && (
+            <button
+              onClick={() => setShowConfirmModal(true)}
+              className="px-4 py-2.5 text-xs font-bold tracking-wider text-white bg-gradient-to-r from-[#C5A880] to-[#D5C2AA] hover:from-[#B5966C] hover:to-[#C5A880] rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1.5"
+            >
+              一鍵套用本月常態課表
+            </button>
+          )}
+        </div>
+
+        {/* 🌟 本日課程看板 */}
+        <div className="mb-6 bg-white/90 rounded-3xl border border-[#EADFC9]/70 shadow-sm p-5 sm:p-6 backdrop-blur-sm">
+          <div className="flex items-center justify-between border-b border-[#EADFC9]/50 pb-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-4 bg-[#C5A880] rounded-full"></span>
+              <h3 className="text-sm sm:text-base font-bold tracking-wide text-stone-800 flex items-center gap-2">
+                本日課程 • 
+                <span className="font-serif italic font-extrabold text-[#8A6F48] text-base sm:text-lg">
+                  {todayStr.split('-')[1]}
+                </span> 
+                月 
+                <span className="font-serif italic font-extrabold text-[#8A6F48] text-base sm:text-lg">
+                  {todayStr.split('-')[2]}
+                </span> 
+                日 
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#FAF6EE] text-[#8A6F48] border border-[#EADFC9] font-bold">
+                  週{['日', '一', '二', '三', '四', '五', '六'][new Date(todayStr).getDay()]}
+                </span>
+              </h3>
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => openAddModal(todayStr)}
+                className="px-3.5 py-1.5 text-xs font-bold text-[#8A6F48] bg-[#FAF6EE] hover:bg-[#C5A880] hover:text-white border border-[#E6D8C1] rounded-xl transition-all shadow-sm"
+              >
+                ＋排定新課程
+              </button>
+            )}
+          </div>
+
+          {todaySchedules.length === 0 ? (
+            <div className="py-8 text-center text-stone-400 text-xs font-bold flex flex-col items-center justify-center gap-2">
+              <span className="text-lg">📅</span>
+              <span>今日尚無安排交易實戰課程</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {todaySchedules.map((sch) => {
+                const theme = COURSE_THEMES[sch.theme || 'gold'];
+                return (
+                  <div
+                    key={sch.id}
+                    onClick={() => setSelectedCourseDetail(sch)}
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all ${theme.bg} ${theme.border} hover:scale-[1.01] hover:shadow-md flex flex-col justify-between`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${theme.pill}`}>
+                          {theme.name}
+                        </span>
+                        <span className="text-xs font-serif italic font-extrabold text-[#8A6F48]">
+                          {sch.startTime} - {sch.endTime}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-extrabold text-stone-800 tracking-wide line-clamp-1">
+                        {sch.title}
+                      </h4>
+                    </div>
+
+                    <div 
+                      className="mt-3.5 pt-2.5 border-t border-stone-200/50 flex items-center justify-between text-[11px] text-stone-500 font-medium"
+                      onClick={(e) => sch.room === "Youtube" && e.stopPropagation()}
+                    >
+                      <div>
+                        講師: <span className="font-bold text-[#8A6F48]">{sch.instructor || '團隊講師'}</span>
+                      </div>
+                      {sch.room === "Youtube" ? (
+                        <a 
+                          href="https://www.youtube.com/@zero2one_skyfx/streams" 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="px-2 py-1 text-[9px] font-bold text-white bg-red-600 hover:bg-red-700 rounded-md transition-all shadow-sm flex items-center gap-1"
+                        >
+                          Youtube 🔴
+                        </a>
+                      ) : sch.note ? (
+                        <span className={`px-1.5 py-0.5 text-[9px] font-bold border rounded-md ${getNoteBadgeStyle(sch.note)}`}>
+                          {sch.note}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 雙欄課表版面 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* 左+中欄：五日制月曆 */}
+          <div className="lg:col-span-2 bg-white/95 rounded-3xl border border-stone-200/80 shadow-md p-4 sm:p-6 overflow-hidden">
+            
+            <div className="grid grid-cols-5 gap-1 sm:gap-2 mb-4 text-center">
+              {WEEKDAYS.map((w, i) => (
+                <div key={i} className="text-[11px] sm:text-[13px] font-extrabold tracking-widest text-[#8A6F48] py-2 border-b border-[#FAF5EC]">
+                  {w}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-5 gap-2 sm:gap-3">
+              {calendarCells.map((cell, index) => {
+                const daySchedules = schedules
+                  .filter(s => s.date === cell.dateStr)
+                  .sort((a, b) => a.startTime.localeCompare(b.startTime));
+                
+                const isSelected = selectedDateStr === cell.dateStr;
+                const currentTodayStr = getFormattedDate(new Date());
+                const isToday = currentTodayStr === cell.dateStr;
+
+                return (
+                  <div
+                    key={index}
+                    onClick={() => {
+                      setSelectedDateStr(cell.dateStr);
+                      if (daySchedules.length > 0) {
+                        setSelectedDayCourses(daySchedules);
+                      }
+                    }}
+                    className={`min-h-[72px] sm:min-h-[95px] p-1.5 sm:p-2 rounded-xl sm:rounded-2xl flex flex-col justify-between border cursor-pointer transition-all relative group
+                      ${cell.isCurrentMonth ? 'bg-white' : 'bg-stone-50/40 opacity-30'}
+                      ${isSelected ? 'border-[#C5A880] ring-4 ring-[#C5A880]/15' : 'border-stone-100 hover:border-stone-200 hover:shadow-sm'}
+                    `}
+                  >
+                    <div className="flex items-center justify-between">
+                      {isToday ? (
+                        <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#C5A880] text-white flex items-center justify-center text-[11px] sm:text-[13px] font-serif italic font-extrabold shadow-sm">
+                          {cell.day}
+                        </span>
+                      ) : (
+                        <span className={`text-[11px] sm:text-[13px] font-serif italic font-extrabold ${isSelected ? 'text-[#8A6F48]' : 'text-stone-500'}`}>
+                          {cell.day}
+                        </span>
+                      )}
+
+                      {isAdmin && cell.isCurrentMonth && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAddModal(cell.dateStr);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 rounded-full bg-[#FAF6EE] border border-[#E6D8C1] text-[#8A6F48] flex items-center justify-center hover:bg-[#C5A880] hover:text-white transition-all text-[9px] font-bold"
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="hidden sm:block mt-1 space-y-1 overflow-hidden">
+                      {daySchedules.slice(0, 3).map((sch) => {
+                        const theme = COURSE_THEMES[sch.theme || 'gold'];
+                        return (
+                          <div
+                            key={sch.id}
+                            className={`px-1 py-0.5 rounded text-[9px] sm:text-[11px] truncate border font-bold ${theme.pill}`}
+                            title={`${sch.startTime} ${sch.title}`}
+                          >
+                            <span className="font-serif italic font-extrabold mr-0.5">{sch.startTime}</span>
+                            {sch.title}
+                          </div>
+                        );
+                      })}
+                      {daySchedules.length > 3 && (
+                        <div className="text-[8px] text-stone-400 text-center font-bold">
+                          還有 {daySchedules.length - 3} 堂...
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex sm:hidden flex-wrap justify-center gap-1 mt-1">
+                      {daySchedules.map((sch) => (
+                        <span key={sch.id} className={`w-1 h-1 rounded-full ${COURSE_THEMES[sch.theme || 'gold'].accent}`} />
+                      ))}
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between text-[11px] text-stone-400 font-bold">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-white border border-[#C5A880] ring-4 ring-[#C5A880]/15"></span>
+                目前選定日期
+              </span>
+              <span>鍵盤 ◄ / ► 切換月份</span>
+            </div>
+
+          </div>
+
+          {/* 右側：助教介紹 */}
+          <div className="flex flex-col gap-6">
+
+            <div className="bg-white/95 rounded-3xl border border-stone-200/80 shadow-md p-6">
+              <div className="border-b border-[#EADFC9]/50 pb-3 mb-4">
+                <h3 className="text-base font-light tracking-wide text-stone-800 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-[#C5A880] rounded-full"></span>
+                  專業交易助教團隊
+                </h3>
+              </div>
+
+              <div className="space-y-3">
+                {TAS_LINE.map((ta) => {
+                  const customizedAvatarUrl = getTaAvatarUrl(ta.id);
+                  return (
+                    <button
+                      key={ta.id}
+                      onClick={() => setSelectedTaQr(ta)}
+                      className="w-full flex items-center gap-3.5 p-3 rounded-2xl border border-transparent hover:border-[#C5A880] hover:bg-[#FAF6EE]/60 transition-all text-left group"
+                    >
+                      {customizedAvatarUrl ? (
+                        <img 
+                          src={customizedAvatarUrl} 
+                          alt={ta.name} 
+                          className="w-12 h-12 rounded-full border-2 border-[#C5A880] object-cover shadow-sm transition-transform group-hover:scale-105 animate-fade-in" 
+                        />
+                      ) : (
+                        <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl font-bold shadow-sm transition-transform group-hover:scale-105 ${ta.avatarBg}`}>
+                          {ta.avatar}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-sm font-extrabold text-stone-800 group-hover:text-[#8A6F48] transition-colors">
+                            {ta.name}
+                          </h4>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${ta.badgeBg}`}>
+                            {ta.badgeText}
+                          </span>
+                        </div>
+                        <p className="text-xs text-stone-500 font-medium mt-0.5 truncate">{ta.title}</p>
+                      </div>
+                      <span className="text-xs text-[#C5A880] font-bold opacity-0 group-hover:opacity-100 transition-opacity">社群 →</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </main>
+
+      <footer className="py-8 mt-12 text-center text-[10px] text-stone-400 font-bold relative z-10">
+        <p>© 2026 {siteTitle} {subTitle}. All Rights Reserved. Designed by Luxury Champagne Ivory Theme.</p>
+      </footer>
+
+      {/* ==================== 彈窗與浮動設定面板 ==================== */}
+
+      {/* 當日全部課程詳情卡彈窗 */}
+      {selectedDayCourses && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden bg-[#FAF6EE] border-2 border-[#C5A880] shadow-2xl rounded-3xl p-7 sm:p-9 animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+            
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#C5A880]/10 rounded-full -mr-12 -mt-12 pointer-events-none" />
+
+            <button 
+              onClick={() => setSelectedDayCourses(null)}
+              className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white border border-[#C5A880]/60 hover:bg-[#C5A880] hover:text-white text-[#8A6F48] transition-all flex items-center justify-center text-base shadow-sm font-bold z-10"
+            >
+              ✕
+            </button>
+
+            <div className="mb-6">
+              <p className="text-[12px] tracking-widest text-[#C5A880] font-extrabold uppercase">DAILY COURSE PREVIEW</p>
+              <h3 className="text-2xl font-bold text-[#8A6F48] mt-2">
+                <span className="font-serif italic font-extrabold text-3xl">{selectedDateStr.split('-')[1]}</span> 月 <span className="font-serif italic font-extrabold text-3xl">{selectedDateStr.split('-')[2]}</span> 日 實戰日程
+              </h3>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1 scrollbar-thin">
+              {selectedDayCourses.map((sch) => {
+                const theme = COURSE_THEMES[sch.theme || 'gold'];
+                return (
+                  <div key={sch.id} className="bg-white p-6 rounded-2xl border border-[#E6D8C1] shadow-sm relative group animate-fade-in">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${theme.pill}`}>
+                        {theme.name}
+                      </span>
+                      <span className="text-base font-serif italic font-extrabold text-[#8A6F48]">
+                        {sch.startTime} - {sch.endTime}
+                      </span>
+                    </div>
+
+                    <h4 className="text-lg font-extrabold text-stone-800 tracking-wide mb-4">
+                      {sch.title}
+                    </h4>
+
+                    <div className="grid grid-cols-2 gap-2 pt-4 border-t border-stone-100 text-sm text-stone-500 items-center">
+                      <div>
+                        講師: <span className="font-bold text-[#8A6F48] text-base">{sch.instructor || '專業講師團隊'}</span>
+                      </div>
+                      <div>
+                        地點: {sch.room === "Youtube" ? (
+                          <a 
+                            href="https://www.youtube.com/@zero2one_skyfx/streams" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all shadow-md"
+                          >
+                            Youtube 🔴
+                          </a>
+                        ) : (
+                          <span className="font-bold text-stone-700 text-base">{sch.room || '線上直播'}</span>
+                        )}
+                      </div>
+                      {sch.note && (
+                        <div className="col-span-2 mt-2">
+                          <span className={`px-3 py-1.5 text-[11px] font-bold border rounded-md ${getNoteBadgeStyle(sch.note)}`}>
+                            {sch.note}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-3 mt-4 pt-4 border-t border-stone-100 justify-end">
+                        <button
+                          onClick={() => openEditModal(sch)}
+                          className="px-3.5 py-2 text-xs font-bold bg-[#FAF6EE] text-[#8A6F48] border border-[#E6D8C1] rounded-lg hover:bg-[#C5A880] hover:text-white transition-all"
+                        >
+                          修改
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSchedule(sch.id)}
+                          className="px-3.5 py-2 text-xs font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-600 hover:text-white transition-all"
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-[#EADFC9]/50 flex gap-3">
+              <button
+                onClick={() => setSelectedDayCourses(null)}
+                className="w-full py-4 bg-gradient-to-r from-[#C5A880] to-[#D5C2AA] text-white rounded-xl text-base font-bold transition-all shadow-md text-center"
+              >
+                關閉日程詳情
+              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    openAddModal(selectedDateStr);
+                    setSelectedDayCourses(null);
+                  }}
+                  className="w-1/2 py-4 bg-white border border-[#C5A880] text-[#8A6F48] hover:bg-stone-50 rounded-xl text-base font-bold transition-all shadow-sm"
+                >
+                  ＋排新課
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 課程單獨詳情卡彈窗 */}
+      {selectedCourseDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md overflow-hidden bg-[#FAF6EE] border-2 border-[#C5A880] shadow-2xl rounded-3xl p-7 sm:p-9 animate-in zoom-in-95 duration-200">
+            
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#C5A880]/10 rounded-full -mr-12 -mt-12 pointer-events-none" />
+
+            <button 
+              onClick={() => setSelectedCourseDetail(null)}
+              className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white border border-[#C5A880]/60 hover:bg-[#C5A880] hover:text-white text-[#8A6F48] transition-all flex items-center justify-center text-base shadow-sm font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <span className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${COURSE_THEMES[selectedCourseDetail.theme || 'gold'].pill}`}>
+                {COURSE_THEMES[selectedCourseDetail.theme || 'gold'].name}
+              </span>
+              <span className="text-[#C5A880] text-base font-semibold">•</span>
+              <span className="text-stone-500 text-sm font-bold tracking-wider font-serif italic font-extrabold">{selectedCourseDetail.date}</span>
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-bold text-[#8A6F48] tracking-wide mb-5 flex items-center gap-2.5">
+              <span className="w-2 h-6 bg-[#D4AF37] rounded-full" />
+              {selectedCourseDetail.title}
+            </h3>
+
+            <div className="space-y-4 bg-white p-6 rounded-2xl border border-[#E6D8C1] shadow-sm mb-7">
+              <div className="flex justify-between items-center text-sm py-2">
+                <span className="text-stone-400 font-bold">上課時間</span>
+                <span className="text-stone-800 font-serif italic font-extrabold tracking-wide text-lg">{selectedCourseDetail.startTime} - {selectedCourseDetail.endTime}</span>
+              </div>
+
+              <div className="flex justify-between items-center text-sm py-2 border-t border-stone-100">
+                <span className="text-stone-400 font-bold">主講人 / 助教</span>
+                <span className="text-[#8A6F48] font-bold text-lg">{selectedCourseDetail.instructor || '專業講師團隊'}</span>
+              </div>
+
+              <div className="flex justify-between items-center text-sm py-2 border-t border-stone-100">
+                <span className="text-stone-400 font-bold">直播地點</span>
+                {selectedCourseDetail.room === "Youtube" ? (
+                  <a 
+                    href="https://www.youtube.com/@zero2one_skyfx/streams" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all shadow-md"
+                  >
+                    Youtube 🔴 前往直播
+                  </a>
+                ) : (
+                  <span className="text-stone-700 font-bold text-lg">{selectedCourseDetail.room || '線上直播'}</span>
+                )}
+              </div>
+
+              {selectedCourseDetail.note && (
+                <div className="flex justify-between items-center text-sm py-2 border-t border-stone-100">
+                  <span className="text-stone-400 font-bold">權限及限制</span>
+                  <span className={`px-3 py-1.5 text-[11px] font-bold border rounded-md ${getNoteBadgeStyle(selectedCourseDetail.note)}`}>
+                    {selectedCourseDetail.note}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSelectedCourseDetail(null)}
+                className="flex-1 py-4 bg-white hover:bg-stone-50 border border-[#C5A880] text-[#8A6F48] rounded-xl text-base font-bold transition-all shadow-sm"
+              >
+                確認並關閉
+              </button>
+              
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    openEditModal(selectedCourseDetail);
+                    setSelectedCourseDetail(null);
+                  }}
+                  className="flex-1 py-4 bg-gradient-to-r from-[#C5A880] to-[#D5C2AA] text-white rounded-xl text-base font-bold transition-all shadow-md"
+                >
+                  直接修改
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 助教社交媒體詳情 */}
+      {selectedTaQr && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden bg-[#FAF6EE] border-2 border-[#C5A880] shadow-2xl rounded-3xl p-6 text-center animate-in zoom-in-95 duration-200">
+            
+            <button 
+              onClick={() => setSelectedTaQr(null)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white border border-[#C5A880]/60 hover:bg-[#C5A880] hover:text-white text-[#8A6F48] transition-all flex items-center justify-center text-sm shadow-sm font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="mb-5 mt-2">
+              <p className="text-[11px] tracking-widest text-[#C5A880] font-extrabold uppercase">{selectedTaQr.title}</p>
+              <h3 className="text-lg font-bold text-[#8A6F48] mt-1.5">
+                {selectedTaQr.name} 的社群專區
+              </h3>
+            </div>
+
+            <div className="space-y-3.5 my-6">
+              {selectedTaQr.socials.map((social, index) => (
+                <a
+                  key={index}
+                  href={social.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 px-5 bg-white hover:bg-[#FAF6EE] border border-[#E6D8C1] hover:border-[#C5A880] rounded-2xl flex items-center justify-between transition-all group shadow-sm hover:scale-[1.02]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    {renderSocialIcon(social.platform)}
+                    <span className="text-sm font-bold text-stone-700 group-hover:text-[#8A6F48] transition-colors">
+                      關注 {social.platform}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#C5A880] font-bold uppercase tracking-wider">
+                    前往探索 →
+                  </span>
+                </a>
+              ))}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 管理員登入 */}
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-stone-800 tracking-wider">安全解鎖驗證</h3>
+              <button 
+                onClick={() => setShowLoginModal(false)}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-stone-400 mb-1.5 uppercase tracking-widest">ENTER PASSCODE</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="請輸入密碼"
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-[#C5A880] text-xs outline-none transition-all"
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#C5A880] hover:bg-[#8A6F48] text-white rounded-xl font-bold text-xs tracking-widest transition-all"
+              >
+                開通管理權限
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 課程新增或修改 */}
+      {showAddEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center pb-4 border-b border-stone-100 mb-4">
+              <h3 className="text-sm font-bold text-stone-800 tracking-wide">
+                {editingSchedule ? '修改單日課程項目' : '排定全新實戰課程'}
+              </h3>
+              <button 
+                onClick={() => setShowAddEditModal(false)}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveSchedule} className="space-y-4">
+              
+              <div className="p-3 bg-[#FAF6EE] border border-[#E6D8C1] rounded-xl text-xs text-[#8A6F48] flex justify-between font-bold">
+                <span>指定日期:</span>
+                <span className="font-serif italic font-extrabold">{selectedDateStr}</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">課堂主題 *</label>
+                <input
+                  type="text"
+                  required
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder="例：破框指標｜實戰課"
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-[#C5A880] outline-none text-xs transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">開始時間 *</label>
+                  <input
+                    type="time"
+                    required
+                    value={formStartTime}
+                    onChange={(e) => setFormStartTime(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-[#C5A880] outline-none text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">結束時間 *</label>
+                  <input
+                    type="time"
+                    required
+                    value={formEndTime}
+                    onChange={(e) => setFormEndTime(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-[#C5A880] focus:border-[#C5A880] outline-none text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">講師助教</label>
+                  <select
+                    value={formInstructor}
+                    onChange={(e) => setFormInstructor(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs"
+                  >
+                    <option value="">未指定</option>
+                    <option value="Darren 助教">Darren 助教</option>
+                    <option value="Gino 助教">Gino 助教</option>
+                    <option value="Luke 助教">Luke 助教</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">上課教室/直播</label>
+                  <input
+                    type="text"
+                    value={formRoom}
+                    onChange={(e) => setFormRoom(e.target.value)}
+                    placeholder="線上直播"
+                    className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-[#C5A880] outline-none text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-2">所屬主題配色類別</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {Object.keys(COURSE_THEMES).map((key) => {
+                    const theme = COURSE_THEMES[key];
+                    const isSelected = formTheme === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setFormTheme(key)}
+                        className={`p-2 rounded-xl border text-[10px] text-center font-bold transition-all ${theme.bg} ${theme.border} ${theme.text}
+                          ${isSelected ? 'ring-2 ring-stone-800 border-transparent scale-105' : 'hover:scale-[1.02]'}
+                        `}
+                      >
+                        {theme.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">備註 / 觀看權限說明</label>
+                <input
+                  type="text"
+                  value={formNote}
+                  onChange={(e) => setFormNote(e.target.value)}
+                  placeholder="例：預約制、社群限定"
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:border-[#C5A880] outline-none text-xs"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddEditModal(false)}
+                  className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-gradient-to-r from-[#C5A880] to-[#D5C2AA] text-white rounded-xl font-bold text-xs shadow-md"
+                >
+                  確認保存課程
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 固定常態週預設範本管理 */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center pb-4 border-b border-stone-100 mb-6">
+              <div>
+                <h3 className="text-sm font-bold text-stone-800 tracking-wide">常態週課表範本配置</h3>
+                <p className="text-xs text-stone-400 mt-0.5">預配置每週一到星期五固定循環的基礎排課（已移除六、日）</p>
+              </div>
+              <button 
+                onClick={() => setShowTemplateModal(false)}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              <form onSubmit={handleSaveTemplateItem} className="space-y-4 bg-stone-50 p-4 rounded-2xl border border-stone-200/50">
+                <h4 className="text-xs font-bold tracking-widest text-[#8A6F48] uppercase">
+                  {editingTemplateItem ? '⚙️ 修改常態預設' : '＋ 新日常態預設'}
+                </h4>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">星期幾 *</label>
+                  <select
+                    value={templateDay}
+                    onChange={(e) => setTemplateDay(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs outline-none"
+                  >
+                    <option value={1}>星期一</option>
+                    <option value={2}>星期二</option>
+                    <option value={3}>星期三</option>
+                    <option value={4}>星期四</option>
+                    <option value={5}>星期五</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">課程主題標題 *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formTitle}
+                    onChange={(e) => setFormTitle(e.target.value)}
+                    placeholder="例：新手教學"
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-500 mb-1">開始時間</label>
+                    <input
+                      type="time"
+                      required
+                      value={formStartTime}
+                      onChange={(e) => setFormStartTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-stone-500 mb-1">結束時間</label>
+                    <input
+                      type="time"
+                      required
+                      value={formEndTime}
+                      onChange={(e) => setFormEndTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-500 mb-1">講師助教</label>
+                    <input
+                      type="text"
+                      value={formInstructor}
+                      onChange={(e) => setFormInstructor(e.target.value)}
+                      placeholder="Luke 助教"
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-stone-500 mb-1">上課地點</label>
+                    <input
+                      type="text"
+                      value={formRoom}
+                      onChange={(e) => setFormRoom(e.target.value)}
+                      placeholder="線上直播"
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 mb-1">類別配色</label>
+                  <select
+                    value={formTheme}
+                    onChange={(e) => setFormTheme(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs outline-none"
+                  >
+                    {Object.keys(COURSE_THEMES).map(k => (
+                      <option key={k} value={k}>{COURSE_THEMES[k].name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  {editingTemplateItem && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTemplateItem(null);
+                        setFormTitle("");
+                      }}
+                      className="flex-1 py-2 text-xs bg-[#C5A880]/10 hover:bg-[#C5A880]/20 text-[#8A6F48] rounded-lg font-bold"
+                    >
+                      取消
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 text-xs bg-[#C5A880] hover:bg-[#8A6F48] text-white font-bold rounded-lg shadow-sm"
+                  >
+                    {editingTemplateItem ? '儲存預設' : '加入常態預設'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="lg:col-span-2 space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+                {[1, 2, 3, 4, 5].map((dayNum) => {
+                  const dayItems = weeklyTemplate
+                    .filter(t => t.dayOfWeek === dayNum)
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+                  const label = ['一', '二', '三', '四', '五'][dayNum - 1];
+
+                  return (
+                    <div key={dayNum} className="border border-stone-200/80 rounded-2xl p-4 bg-white shadow-sm">
+                      <div className="flex items-center justify-between border-b border-stone-100 pb-2 mb-2">
+                        <span className="font-bold text-xs text-[#8A6F48]">星期{label}</span>
+                        <span className="text-[10px] text-stone-400 font-bold">常態: <span className="font-serif italic font-extrabold">{dayItems.length}</span> 堂</span>
+                      </div>
+
+                      {dayItems.length === 0 ? (
+                        <p className="text-[11px] text-stone-400 italic">無常態週課配置</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {dayItems.map(item => {
+                            const theme = COURSE_THEMES[item.theme || 'gold'];
+                            return (
+                              <div key={item.id} className={`p-2 rounded-xl border flex items-center justify-between gap-1 text-[11px] ${theme.bg} ${theme.border}`}>
+                                <div className="truncate">
+                                  <p className="font-bold text-stone-800 truncate">{item.title}</p>
+                                  <p className="text-[9px] text-stone-400 font-bold mt-0.5">
+                                    <span className="font-serif italic font-extrabold">{item.startTime}</span> - <span className="font-serif italic font-extrabold">{item.endTime}</span>
+                                  </p>
+                                </div>
+                                <div className="flex items-center">
+                                  <button
+                                    onClick={() => {
+                                      setEditingTemplateItem(item);
+                                      setTemplateDay(item.dayOfWeek);
+                                      setFormTitle(item.title);
+                                      setFormStartTime(item.startTime);
+                                      setFormEndTime(item.endTime);
+                                      setFormInstructor(item.instructor || "");
+                                      setFormRoom(item.room || "");
+                                      setFormTheme(item.theme || "gold");
+                                    }}
+                                    className="p-1 rounded text-stone-500 hover:bg-white text-[10px] font-bold"
+                                  >
+                                    改
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTemplateItem(item.id)}
+                                    className="p-1 rounded text-rose-500 hover:bg-white text-[10px] font-bold ml-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 系統安全與品牌設定 */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center pb-4 border-b border-stone-100 mb-4">
+              <h3 className="text-sm font-bold text-stone-800 tracking-wide">品牌、助教與密碼設定</h3>
+              <button 
+                onClick={() => setShowSettingsModal(false)}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">主標題營隊文字</label>
+                <input
+                  type="text"
+                  required
+                  value={siteTitle}
+                  onChange={(e) => setSiteTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 outline-none text-xs focus:border-[#C5A880]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">英文副標題字樣</label>
+                <input
+                  type="text"
+                  required
+                  value={subTitle}
+                  onChange={(e) => setSubTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 outline-none text-xs focus:border-[#C5A880]"
+                />
+              </div>
+
+              {/* 🛡️ 助教頭像網址設定 */}
+              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/60 space-y-3">
+                <h4 className="text-xs font-bold text-stone-700">助教頭像設定（貼上網址並保存，即可永久雲端同步）</h4>
+                
+                <div>
+                  <label className="block text-[11px] text-stone-400 font-semibold mb-1">Gino 助教頭像連結</label>
+                  <input
+                    type="text"
+                    value={ginoAvatar}
+                    onChange={(e) => setGinoAvatar(e.target.value)}
+                    placeholder="請貼上 Gino 圖片網址"
+                    className="w-full px-3 py-1.5 rounded-xl border border-stone-200 outline-none text-[11px] focus:border-[#C5A880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-400 font-semibold mb-1">Darren 助教頭像連結</label>
+                  <input
+                    type="text"
+                    value={darrenAvatar}
+                    onChange={(e) => setDarrenAvatar(e.target.value)}
+                    placeholder="請貼上 Darren 圖片網址"
+                    className="w-full px-3 py-1.5 rounded-xl border border-stone-200 outline-none text-[11px] focus:border-[#C5A880]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-stone-400 font-semibold mb-1">Luke 助教頭像連結</label>
+                  <input
+                    type="text"
+                    value={lukeAvatar}
+                    onChange={(e) => setLukeAvatar(e.target.value)}
+                    placeholder="請貼上 Luke 圖片網址"
+                    className="w-full px-3 py-1.5 rounded-xl border border-stone-200 outline-none text-[11px] focus:border-[#C5A880]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-500 mb-1">自訂管理員解鎖密碼</label>
+                <input
+                  type="text"
+                  required
+                  value={adminPasscode}
+                  onChange={(e) => setAdminPasscode(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 outline-none text-xs focus:border-[#C5A880]"
+                />
+              </div>
+
+              <div className="flex gap-2.5 pt-4 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-[#C5A880] text-white rounded-xl font-bold text-xs shadow-md"
+                >
+                  確認保存設定
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 批量套用確認 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-sm w-full p-6 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-16 h-16 rounded-full bg-[#FAF6EE] border border-[#E6D8C1] text-2xl flex items-center justify-center mx-auto mb-4">
+              ✨
+            </div>
+            <h3 className="text-sm font-bold text-stone-800 mb-2">確認批量生成？</h3>
+            <p className="text-xs text-stone-400 mb-6 font-light leading-relaxed">
+              系統將會自動將您預排的「固定常態週課表（MON - FRI）」套用並產生至 <span className="font-serif italic font-bold text-stone-700">{year}</span> 年 <span className="font-serif italic font-bold text-stone-700">{month + 1}</span> 月 的平日日子。已手動調整之特定日程將會被保留。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleApplyTemplateToMonth}
+                className="flex-1 py-2.5 bg-[#C5A880] text-white rounded-xl text-xs font-bold shadow-sm"
+              >
+                確認並套用
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast.show && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 border text-xs font-medium 
+            ${toast.type === 'error' 
+              ? 'bg-rose-50 border-rose-200 text-rose-800' 
+              : 'bg-[#FAF6EE] border-[#EADFC9] text-[#8A6F48]'}
+          `}>
+            <span>{toast.type === 'error' ? '⚠️' : '✨'}</span>
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
