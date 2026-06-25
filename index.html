@@ -444,11 +444,11 @@
       const yearVal = 2026;
       const monthVal = '06';
 
-      // 週一 新手教學 14:00 (Darren 助教) - [預約制]
+      // 週一 新手課 14:00 (Darren 助教) - [預約制]
       ['01', '08', '15', '22', '29'].forEach(day => {
         DEFAULT_SCHEDULES.push({
           id: `def-mon-${day}`,
-          title: "新手教學",
+          title: "新手課",
           date: `${yearVal}-${monthVal}-${day}`,
           startTime: "14:00",
           endTime: "15:30",
@@ -534,10 +534,10 @@
 
     // 常態週配置範本模板
     const DEFAULT_WEEK_TEMPLATE = [
-      { id: 't1', dayOfWeek: 1, title: '新手教學', startTime: '14:00', endTime: '15:30', instructor: 'Darren 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+      { id: 't1', dayOfWeek: 1, title: '新手課', startTime: '14:00', endTime: '15:30', instructor: 'Darren 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
       { id: 't2', dayOfWeek: 2, title: '破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
       { id: 't3', dayOfWeek: 3, title: '首K+破框指標初階', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: 'Youtube', note: '全公開', theme: 'gold' },
-      { id: 't4', dayOfWeek: 4, title: '新手教學', startTime: '20:30', endTime: '21:30', instructor: 'Luke 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+      { id: 't4', dayOfWeek: 4, title: '新手課', startTime: '20:30', endTime: '21:30', instructor: 'Luke 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
       { id: 't5', dayOfWeek: 4, title: '破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
       { id: 't6', dayOfWeek: 5, title: '首K+破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: '線上直播', note: '社群限定', theme: 'rose' }
     ];
@@ -646,7 +646,7 @@
 
     // --- 🔑 【精準自動強制標籤與規則配置】 ---
     function normalizeCourse(sch) {
-      if (sch.title === "新手教學") {
+      if (sch.title === "新手課") {
         sch.note = "預約制";
         sch.theme = "emerald";
       } else if (sch.title === "破框指標實戰課") {
