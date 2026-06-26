@@ -8,26 +8,33 @@
   <!-- 載入亮麗、奢華的高級香檳金象牙色 Tailwind CSS 與字體 -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 預連線至 Google 字體伺服器，縮短手機下載與握手時間，防止手機端加載緩慢 -->
+  <!-- 預連線至 Google 字體伺服器，縮短手機下載與握手時間 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- 引入極致優雅的古典字體：Cinzel（經典英文）、Playfair Display（法式優雅襯線）、Noto Serif TC（極致繁體中文宋體）、Noto Sans TC（保留給特定標題） -->
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Playfair+Display:ital,wght=0,400;0,700;1,700&family=Noto+Serif+TC:wght@400;500;700;900&family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet">
+  
+  <!-- 拆分字型加載連結，大幅加快手機行動網路的下載速度，防止加載超時 -->
+  <!-- 連結 1：載入古典奢華英文襯線體 -->
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Playfair+Display:ital,wght=0,400;0,700;1,700&display=swap" rel="stylesheet">
+  <!-- 連結 2：載入極致繁體中文宋體 Noto Serif TC -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- 連結 3：保留特定標題字型 -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet">
   
   <style>
-    /* 1. 全球最高優先權覆蓋：強制全站所有動態、靜態元素、按鈕、下拉選單與表單全面套用 Noto Serif TC (宋體) */
+    /* 1. 最高優先權覆蓋：強制全站所有元素與動態容器全面套用繁體宋體 */
+    /* 特別為 iOS/Safari 加入了系統內建宋體 'Songti TC'、'Apple LiSung' 與 'BiauKai' 作為強效安全備份 */
     *, html, body, button, input, select, textarea, span, div, h1, h2, h3, h4, h5, h6, p, a {
-      font-family: 'Noto Serif TC', 'Songti TC', 'Songti SC', 'PMingLiU', serif !important;
+      font-family: 'Noto Serif TC', 'Songti TC', 'Apple LiSung', 'BiauKai', 'Songti SC', 'PMingLiU', serif !important;
     }
 
     /* 2. 保留宋體專屬基礎宣告 */
     .font-songti, .font-songti * {
-      font-family: 'Noto Serif TC', 'Playfair Display', 'Songti TC', serif !important;
+      font-family: 'Noto Serif TC', 'Playfair Display', 'Songti TC', 'BiauKai', serif !important;
     }
 
     /* 3. 左上角主標題「交易啟航營」特別維持高雅的宋體微距質感，不隨意跑版 */
     .font-title-original, .font-title-original * {
-      font-family: 'Noto Serif TC', 'Songti TC', 'PMingLiU', serif !important;
+      font-family: 'Noto Serif TC', 'Songti TC', 'BiauKai', serif !important;
     }
 
     /* 4. 針對英文、數字、時間特別指定的優雅古典襯線體（確保不受手機預設系統字體影響） */
@@ -58,7 +65,7 @@
 </head>
 <body class="bg-gradient-to-tr from-[#FFFDF9] via-[#FAF3E8] to-[#F3EDE2] overflow-x-hidden selection:bg-[#EEDFC7] selection:text-[#5E4C3E]">
 
-  <!-- 主容器：採用純淨、無雜質的淡金色香檳絲綢漸層底色 (已徹底清除背景任何裝飾線與不明色塊) -->
+  <!-- 主容器：採用純淨、無雜質的淡金色香檳絲綢漸層底色 -->
   <div id="app-container" class="min-h-screen text-[#4A3E3D] relative pb-16">
     
     <!-- 頂部導覽：保持優雅香檳微光 -->
@@ -468,11 +475,11 @@
       const yearVal = 2026;
       const monthVal = '06';
 
-      // 週一 新手教學 14:00 (Darren 助教) - [預約制]
+      // 週一 新手課 14:00 (Darren 助教) - [預約制]
       ['01', '08', '15', '22', '29'].forEach(day => {
         DEFAULT_SCHEDULES.push({
           id: `def-mon-${day}`,
-          title: "新手教學",
+          title: "新手課",
           date: `${yearVal}-${monthVal}-${day}`,
           startTime: "14:00",
           endTime: "15:30",
@@ -513,11 +520,11 @@
         });
       });
 
-      // 週四 新手教學 20:30 (Luke 助教) - [預約制] & 破框指標實戰課 21:00 (Gino 助教) - [社群限定]
+      // 週四 新手課 20:30 (Luke 助教) - [預約制] & 破框指標實戰課 21:00 (Gino 助教) - [社群限定]
       ['04', '11', '18', '25'].forEach(day => {
         DEFAULT_SCHEDULES.push({
           id: `def-thu-1-${day}`,
-          title: "新手教學",
+          title: "新手課",
           date: `${yearVal}-${monthVal}-${day}`,
           startTime: "20:30",
           endTime: "21:30",
@@ -558,10 +565,10 @@
 
     // 常態週配置範本模板
     const DEFAULT_WEEK_TEMPLATE = [
-      { id: 't1', dayOfWeek: 1, title: '新手教學', startTime: '14:00', endTime: '15:30', instructor: 'Darren 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+      { id: 't1', dayOfWeek: 1, title: '新手課', startTime: '14:00', endTime: '15:30', instructor: 'Darren 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
       { id: 't2', dayOfWeek: 2, title: '破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
       { id: 't3', dayOfWeek: 3, title: '首K+破框指標初階', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: 'Youtube', note: '全公開', theme: 'gold' },
-      { id: 't4', dayOfWeek: 4, title: '新手教學', startTime: '20:30', endTime: '21:30', instructor: 'Luke 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
+      { id: 't4', dayOfWeek: 4, title: '新手課', startTime: '20:30', endTime: '21:30', instructor: 'Luke 助教', room: '線上直播', note: '預約制', theme: 'emerald' },
       { id: 't5', dayOfWeek: 4, title: '破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Gino 助教', room: '線上直播', note: '社群限定', theme: 'indigo' },
       { id: 't6', dayOfWeek: 5, title: '首K+破框指標實戰課', startTime: '21:00', endTime: '22:30', instructor: 'Luke 助教', room: '線上直播', note: '社群限定', theme: 'rose' }
     ];
@@ -690,6 +697,7 @@
     // --- Firebase Compat 雲端初始化與安全登入 ---
     let app, db;
     try {
+      // 判斷是否已經有 app 被初始化，防止重複初始化導致拋出 Exception
       if (!firebase.apps.length) {
         app = firebase.initializeApp(firebaseConfig);
       } else {
@@ -1097,6 +1105,7 @@
       openModal('modal-indicator');
     }
 
+    // 統一顯示 立即加入官方 LINE 領取指標 / 諮詢課程資訊
     function chooseTeacher(key) {
       const teacher = TEACHERS_LINE[key];
       document.getElementById('indicator-step-1').classList.add('hidden');
@@ -1260,7 +1269,7 @@
               <span class="text-sm font-serif-custom italic font-extrabold text-[#8A6F48]">${sch.startTime} - ${sch.endTime}</span>
             </div>
             <h4 class="text-base font-extrabold text-stone-800 tracking-wide mb-3">${sch.title}</h4>
-            <div class="grid grid-cols-2 gap-2 pt-3 border-t border-[#E6D8C1] text-xs text-stone-500 items-center">
+            <div class="grid grid-cols-2 gap-2 pt-3 border-t border-[#E5DAC9]/60 text-xs text-stone-500 items-center">
               <div>講師: <span class="font-bold text-[#8A6F48]">${sch.instructor || '團隊'}</span></div>
               <div>地點: <span class="font-bold text-stone-700">${sch.room || '線上'}</span></div>
             </div>
