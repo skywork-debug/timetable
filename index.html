@@ -10,20 +10,40 @@
   <!-- 引入極致優雅的古典字體：Cinzel（經典英文）、Playfair Display（法式優雅襯線）、Noto Serif TC（極致繁體中文宋體）、Noto Sans TC（保留給特定標題） -->
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Playfair+Display:ital,wght=0,400;0,700;1,700&family=Noto+Serif+TC:wght@400;500;700;900&family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet">
   
-  <style>
-    /* 全站文字預設全面套用 Noto Serif TC (宋體 / Serif) */
-    body {
-      font-family: 'Noto Serif TC', 'Playfair Display', 'Songti TC', 'Songti SC', 'PMingLiU', serif;
+<style>
+    /* 1. 全球最高優先權覆蓋：強制全站所有動態、靜態元素、按鈕、下拉選單與表單全面套用 Noto Serif TC (宋體) */
+    *, html, body, button, input, select, textarea, span, div, h1, h2, h3, h4, h5, h6, p, a {
+      font-family: 'Noto Serif TC', 'Songti TC', 'Songti SC', 'PMingLiU', serif !important;
     }
-    .font-songti {
-      font-family: 'Noto Serif TC', 'Playfair Display', 'Songti TC', serif;
+
+    /* 2. 保留宋體專屬基礎宣告 */
+    .font-songti, .font-songti * {
+      font-family: 'Noto Serif TC', 'Playfair Display', 'Songti TC', serif !important;
     }
-    /* 尊榮主標題改回優雅宋體，與全站奢華風格統一 */
-    .font-title-original {
-      font-family: 'Noto Sans TC', 'Songti TC';
+
+    /* 3. 左上角主標題「交易啟航營」特別維持高雅的宋體微距質感，不隨意跑版 */
+    .font-title-original, .font-title-original * {
+      font-family: 'Noto Serif TC', 'Songti TC', 'PMingLiU', serif !important;
     }
-    .font-serif-custom {
-      font-family: 'Playfair Display', 'Cinzel', serif;
+
+    /* 4. 針對英文、數字、時間特別指定的優雅古典襯線體（確保不受手機預設系統字體影響） */
+    .font-serif-custom, .font-serif-custom * {
+      font-family: 'Playfair Display', 'Cinzel', serif !important;
+    }
+
+    /* 自訂精緻滾動條 */
+    .scrollbar-luxury::-webkit-scrollbar {
+      width: 6px;
+    }
+    .scrollbar-luxury::-webkit-scrollbar-track {
+      background: #FAF6EE;
+    }
+    .scrollbar-luxury::-webkit-scrollbar-thumb {
+      background: #E5DAC9;
+      border-radius: 99px;
+    }
+    .scrollbar-luxury::-webkit-scrollbar-thumb:hover {
+      background: #C5A880;
     }
   </style>
 
